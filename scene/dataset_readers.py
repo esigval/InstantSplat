@@ -24,6 +24,7 @@ from pathlib import Path
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
+from utils.semantic_utils import find_mask_path, resolve_mask_dir
 
 class CameraInfo(NamedTuple):
     uid: int
@@ -36,6 +37,7 @@ class CameraInfo(NamedTuple):
     image_name: str
     width: int
     height: int
+    semantic_mask_path: str | None = None
 
 
 class SceneInfo(NamedTuple):
@@ -103,7 +105,7 @@ def loadCameras(poses, viewpoint_stack):
     return viewpoint_stack
 
 
-def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
+def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, semantic_mask_dir=""):
     cam_infos = []
     poses=[]
     for idx, key in enumerate(cam_extrinsics):
@@ -151,8 +153,19 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
         else:
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
-        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=image_path, image_name=image_name, width=width, height=height)
+        cam_info = CameraInfo(
+            uid=uid,
+            R=R,
+            T=T,
+            FovY=FovY,
+            FovX=FovX,
+            image=image,
+            image_path=image_path,
+            image_name=image_name,
+            width=width,
+            height=height,
+            semantic_mask_path=find_mask_path(semantic_mask_dir, image_name) if semantic_mask_dir else None,
+        )
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos, poses
@@ -160,7 +173,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
 
 
 # For interpolated video, open when only render interpolated video
-def readColmapCamerasInterp(cam_extrinsics, cam_intrinsics, images_folder, model_path):
+def readColmapCamerasInterp(cam_extrinsics, cam_intrinsics, images_folder, model_path, semantic_mask_dir=""):
     
     pose_interpolated_path = model_path + 'pose/pose_interpolated.npy'
     pose_interpolated = np.load(pose_interpolated_path)
@@ -203,8 +216,19 @@ def readColmapCamerasInterp(cam_extrinsics, cam_intrinsics, images_folder, model
         image_name = str(idx).zfill(4)
         image = Image.open(images_folder + '/' + image_name_0)
 
-        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=images_folder, image_name=image_name, width=width, height=height)
+        cam_info = CameraInfo(
+            uid=uid,
+            R=R,
+            T=T,
+            FovY=FovY,
+            FovX=FovX,
+            image=image,
+            image_path=images_folder,
+            image_name=image_name,
+            width=width,
+            height=height,
+            semantic_mask_path=find_mask_path(semantic_mask_dir, image_name) if semantic_mask_dir else None,
+        )
         cam_infos.append(cam_info)
 
     sys.stdout.write('\n')
@@ -325,7 +349,13 @@ def readColmapSceneInfo(path, images, eval, args, llffhold=8):
     cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
     reading_dir = "images" if images == None else images
 
-    cam_infos_unsorted, poses = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir))
+    semantic_mask_dir = resolve_mask_dir(path, getattr(args, "semantic_mask_dir", ""))
+    cam_infos_unsorted, poses = readColmapCameras(
+        cam_extrinsics=cam_extrinsics,
+        cam_intrinsics=cam_intrinsics,
+        images_folder=os.path.join(path, reading_dir),
+        semantic_mask_dir=semantic_mask_dir,
+    )
     sorting_indices = sorted(range(len(cam_infos_unsorted)), key=lambda x: cam_infos_unsorted[x].image_name)
     cam_infos = [cam_infos_unsorted[i] for i in sorting_indices]
     sorted_poses = [poses[i] for i in sorting_indices]
@@ -369,7 +399,7 @@ def readColmapSceneInfo(path, images, eval, args, llffhold=8):
     return scene_info
 
 
-def readCamerasFromTransforms(path, transformsfile, white_background, extension=".png"):
+def readCamerasFromTransforms(path, transformsfile, white_background, extension=".png", semantic_mask_dir=""):
     cam_infos = []
 
     with open(os.path.join(path, transformsfile)) as json_file:
@@ -406,16 +436,30 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
             FovY = fovy 
             FovX = fovx
 
-            cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                            image_path=image_path, image_name=image_name, width=image.size[0], height=image.size[1]))
+            cam_infos.append(
+                CameraInfo(
+                    uid=idx,
+                    R=R,
+                    T=T,
+                    FovY=FovY,
+                    FovX=FovX,
+                    image=image,
+                    image_path=image_path,
+                    image_name=image_name,
+                    width=image.size[0],
+                    height=image.size[1],
+                    semantic_mask_path=find_mask_path(semantic_mask_dir, image_name) if semantic_mask_dir else None,
+                )
+            )
             
     return cam_infos
 
 def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
     print("Reading Training Transforms")
-    train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension)
+    semantic_mask_dir = resolve_mask_dir(path, "")
+    train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension, semantic_mask_dir)
     print("Reading Test Transforms")
-    test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension)
+    test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension, semantic_mask_dir)
     
     if not eval:
         train_cam_infos.extend(test_cam_infos)

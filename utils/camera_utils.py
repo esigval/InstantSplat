@@ -11,8 +11,10 @@
 
 from scene.cameras import Camera
 import numpy as np
+import torch
 from utils.general_utils import PILtoTorch
 from utils.graphics_utils import fov2focal
+from utils.semantic_utils import find_mask_path, load_mask_tensor, resolve_mask_dir
 import scipy
 import matplotlib.pyplot as plt
 
@@ -44,14 +46,21 @@ def loadCam(args, id, cam_info, resolution_scale):
 
     gt_image = resized_image_rgb[:3, ...]
     loaded_mask = None
+    semantic_mask = None
 
     if resized_image_rgb.shape[1] == 4:
         loaded_mask = resized_image_rgb[3:4, ...]
 
+    if getattr(args, "semantic_label_name", ""):
+        mask_dir = resolve_mask_dir(args.source_path, getattr(args, "semantic_mask_dir", ""))
+        mask_path = cam_info.semantic_mask_path or find_mask_path(mask_dir, cam_info.image_name)
+        if mask_path:
+            semantic_mask = load_mask_tensor(mask_path, resolution[0], resolution[1], device=torch.device(args.data_device))
+
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
                   image=gt_image, gt_alpha_mask=loaded_mask,
-                  image_name=cam_info.image_name, uid=id, data_device=args.data_device)
+                  image_name=cam_info.image_name, uid=id, semantic_mask=semantic_mask, data_device=args.data_device)
 
 
 def cameraList_from_camInfos(cam_infos, resolution_scale, args):

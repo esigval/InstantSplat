@@ -56,6 +56,11 @@ class ModelParams(ParamGroup):
         self.eval = False
         self.n_views = 0
         self.init_scale_from_view_depth = False
+        self.semantic_label_name = "deck"
+        self.semantic_mask_dir = ""
+        self.semantic_mask_threshold = 127
+        self.semantic_vote_min_depth = 0.0001
+        self.semantic_vote_interval = 10
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -91,6 +96,9 @@ class OptimizationParams(ParamGroup):
         self.random_background = False
         self.pp_optimizer = False
         self.optim_pose = False
+        self.semantic_min_visible_views = 1
+        self.semantic_min_positive_views = 2
+        self.semantic_min_score = 0.5
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

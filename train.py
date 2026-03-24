@@ -90,6 +90,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
+    gaussians.configure_semantics(
+        label_name=getattr(dataset, "semantic_label_name", ""),
+        min_visible_views=getattr(opt, "semantic_min_visible_views", 1),
+        min_positive_views=getattr(opt, "semantic_min_positive_views", 1),
+        min_score=getattr(opt, "semantic_min_score", 0.5),
+        min_depth=getattr(dataset, "semantic_vote_min_depth", 1e-4),
+    )
 
     # per-point-optimizer
     confidence_path = os.path.join(dataset.source_path, f"sparse_{dataset.n_views}/0", "confidence_dsp.npy")
@@ -184,6 +191,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # print("Gradient of self.P:", gaussians.P.grad)
         
         with torch.no_grad():
+            if dataset.semantic_label_name and iteration % max(1, dataset.semantic_vote_interval) == 0:
+                gaussians.accumulate_semantic_votes(
+                    camera=viewpoint_cam,
+                    pose=pose,
+                    visibility_filter=visibility_filter,
+                    mask_threshold=dataset.semantic_mask_threshold,
+                )
+
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             if iteration % 10 == 0:
